@@ -633,11 +633,10 @@ static void htc_batt_smb5_dump_reg(void)
 	}
 #else
 	u8 chg_sts[11], chg_42, chg_61, chg_70;
-	u8 dcdc_09, dcdc_10, dcdc_50, bat_10;
+	u8 dcdc_09, dcdc_10, dcdc_50;
 	u8 usb_sts[11], usb_18, usb_40, usb_42, usb_44, usb_5x[5], usb_6x[9], usb_70, usb_8x[5];
 	u8 typec_18;
 	u8 misc_sts[11], misc_70;
-	u8 fg_adcrr_5f;
 	u16 idx;
 
 	if (!data) {
@@ -657,9 +656,6 @@ static void htc_batt_smb5_dump_reg(void)
 	htc_batt_smb5_read(data, (DCDC_BASE + INT_RT_STS_OFFSET), &dcdc_10);
 	htc_batt_smb5_read(data, DCDC_FSW_SEL_REG, &dcdc_50);
 
-	/* Dump for BATIF part */
-	htc_batt_smb5_read(data, (BATIF_BASE + INT_RT_STS_OFFSET), &bat_10);
-
 	/* Dump for USBIN part */
 	for (idx = 0; idx < sizeof(usb_sts); idx++)
 		htc_batt_smb5_read(data, USBIN_INPUT_STATUS_REG + idx, &usb_sts[idx]);
@@ -675,7 +671,6 @@ static void htc_batt_smb5_dump_reg(void)
 		htc_batt_smb5_read(data, USBIN_AICL_OPTIONS_CFG_REG + idx, &usb_8x[idx]);
 	htc_batt_smb5_read(data, CMD_ICL_OVERRIDE_REG, &usb_42);
 	htc_batt_smb5_read(data, USBIN_ADAPTER_ALLOW_OVERRIDE_REG, &usb_44);
-	htc_batt_smb5_read(data, FG_ADC_RR_BATT_ID_STS, &fg_adcrr_5f);
 
 	/* Dump for TYPEC part*/
 	htc_batt_smb5_read(data, TYPEC_INT_LATCHED_STS_REG, &typec_18);
@@ -686,14 +681,12 @@ static void htc_batt_smb5_dump_reg(void)
 
 	htc_batt_smb5_read(data, MISC_THERMREG_SRC_CFG_REG, &misc_70);
 
-	BATT_DUMP("CHG[06:10]=[%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x],CHG[42,61,70]=[%02x,%02x,%02x],FG_ADCRR[5F]=[%02x]\n",
+	BATT_DUMP("CHG[06:10]=[%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x],CHG[42,61,70]=[%02x,%02x,%02x]",
 				chg_sts[0], chg_sts[1], chg_sts[2], chg_sts[3], chg_sts[4], chg_sts[5],
 				chg_sts[6],chg_sts[7], chg_sts[8], chg_sts[9], chg_sts[10],
-				chg_42, chg_61, chg_70,
-                                fg_adcrr_5f);
+				chg_42, chg_61, chg_70);
 
-	BATT_DUMP("USB[06:10]=[%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x],USB[18]=[%02x]\
-					,USB[40,42,44]=[%02x,%02x,%02x],USB[58:5B]=[%02x,%02x,%02x,%02x,%02x]\n",
+	BATT_DUMP("USB[06:10]=[%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x],USB[18,40,42,44]=[%02x,%02x,%02x,%02x],USB[58:5B]=[%02x,%02x,%02x,%02x,%02x]\n",
 				usb_sts[0], usb_sts[1], usb_sts[2], usb_sts[3], usb_sts[4], usb_sts[5],
 				usb_sts[6], usb_sts[7], usb_sts[8], usb_sts[9], usb_sts[10], usb_18,
 				usb_40, usb_42, usb_44, usb_5x[0], usb_5x[1], usb_5x[2], usb_5x[3], usb_5x[4]);
@@ -702,12 +695,11 @@ static void htc_batt_smb5_dump_reg(void)
 				usb_6x[6], usb_6x[7], usb_6x[8],
 				usb_70, usb_8x[0], usb_8x[1], usb_8x[2], usb_8x[3], usb_8x[4]);
 
-	BATT_DUMP("TYPEC[18]=[%02x]\n", typec_18);
 
-	BATT_DUMP("MISC[06:10]=[%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x],MISC[70]=[%02x],DCDC[09,10,50]=[%02x,%02x.%02x],BAT[10]=[%02x]\n",
+	BATT_DUMP("MISC[06:10]=[%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x],MISC[70]=[%02x],DCDC[09,10,50]=[%02x,%02x.%02x],TYPEC[18]=[%02x]\n",
 				misc_sts[0], misc_sts[1], misc_sts[2], misc_sts[3], misc_sts[4], misc_sts[5],
 				misc_sts[6], misc_sts[7], misc_sts[8], misc_sts[9], misc_sts[10],misc_70,
-				dcdc_09, dcdc_10, dcdc_50, bat_10);
+				dcdc_09, dcdc_10, dcdc_50, typec_18);
 
 
 #endif

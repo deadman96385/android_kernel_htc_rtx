@@ -38,6 +38,6 @@
 / {
 	model = "overlay HTC RTX XA";
 	compatible = "qcom,sm8150-mtp", "qcom,sm8150", "qcom,mtp";
-	qcom,msm-id = <485 0x10000>, <486 0x10000>, <487 0x10000>, <492 0x10000>;
+	qcom,msm-id = <485 0x10000>, <486 0x10000>, <487 0x10000>, <492 0x10000>, <493 0x10000>;
 	qcom,board-id = <0x0 0x0>;
 };

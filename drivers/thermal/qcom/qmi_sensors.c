@@ -20,6 +20,7 @@
 #include <linux/slab.h>
 #include <linux/of.h>
 #include <linux/soc/qcom/qmi.h>
+#include <soc/qcom/htc_util.h>
 #include <linux/net.h>
 #include <linux/kernel.h>
 #include <linux/suspend.h>
@@ -336,6 +337,19 @@ static int qmi_sensor_set_trips(void *data, int low, int high)
 	return ret;
 }
 
+void qmi_htc_ts_common_ind_cb(struct qmi_handle *qmi, struct sockaddr_qrtr *sq,
+				   struct qmi_txn *txn, const void *decoded)
+{
+	const struct qmi_htc_ts_common_ind_msg_v01 *ind_msg = decoded;
+
+	if (!txn) {
+		pr_err("Invalid transaction\n");
+		return;
+	}
+
+	k_pr_embedded("[K] 5G modem total suspend count: %s", ind_msg->common_ind);
+}
+
 static struct thermal_zone_of_device_ops qmi_sensor_ops = {
 	.get_temp = qmi_sensor_read,
 	.set_trips = qmi_sensor_set_trips,
@@ -348,6 +362,13 @@ static struct qmi_msg_handler handlers[] = {
 		.ei = ts_temp_report_ind_msg_v01_ei,
 		.decoded_size = sizeof(struct ts_temp_report_ind_msg_v01),
 		.fn = qmi_ts_ind_cb
+	},
+	{
+		.type = QMI_INDICATION,
+		.msg_id = QMI_HTC_TS_COMMON_IND_V01,
+		.ei = qmi_htc_ts_common_ind_msg_v01_ei,
+		.decoded_size = sizeof(struct qmi_htc_ts_common_ind_msg_v01),
+		.fn = qmi_htc_ts_common_ind_cb
 	},
 	{}
 };

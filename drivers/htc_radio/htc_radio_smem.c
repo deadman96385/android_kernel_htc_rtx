@@ -18,6 +18,7 @@
 #define SMEM_ID_VENDOR0 134
 #define SMEM_APPS 0    //refer from modem code smem_type.h
 
+char htc_rom_version[16] = "";
 struct htc_smem_type *htc_radio_smem_via_smd;
 
 #ifdef CONFIG_DEBUG_FS
@@ -183,6 +184,10 @@ static int htc_radio_smem_probe(struct platform_device *pdev)
 							&htc_radio_smem_via_smd->htc_smem_ce_radio_dbg_flag_ext2);
 		of_property_read_u8_array(dnp, "htc_rom_ver",&htc_radio_smem_via_smd->htc_rom_ver[0],
 							sizeof(htc_radio_smem_via_smd->htc_rom_ver));
+
+		snprintf(htc_rom_version, sizeof(htc_rom_version), "%-15s", htc_radio_smem_via_smd->htc_rom_ver);
+		pr_info("[smem] rom version: %s, size: %d", htc_rom_version, sizeof(htc_rom_version));
+
 		of_property_read_u32(dnp, "htc_smem_pid", &htc_radio_smem_via_smd->htc_smem_pid);
 		of_property_read_u8_array(dnp, "htc_smem_cid", &htc_radio_smem_via_smd->htc_smem_cid[0],
 							sizeof(htc_radio_smem_via_smd->htc_smem_cid));
@@ -243,6 +248,42 @@ static void __exit htc_radio_smem_exit(void)
 {
 	platform_driver_unregister(&htc_radio_smem_driver);
 }
+
+static int htc_radio_set_ver(const char *val, const struct kernel_param *kp)
+{
+	char *ver_str = (char *)val;
+	size_t ver_len = strlen(ver_str);
+	char version[16];
+
+	if (ver_len == 0 || ver_len > 15)
+		return -EINVAL;
+
+	memset(version, 0, sizeof(version));
+
+	//pr_info("[smem] ver_len: %d", ver_len);
+
+	snprintf(version, sizeof(version), "%-15s", ver_str);
+	pr_info("[smem] rom version: %s => %s\n, size: %d", htc_radio_smem_via_smd->htc_rom_ver,
+		version, sizeof(version));
+
+	strlcpy((char *)htc_radio_smem_via_smd->htc_rom_ver, version,
+		sizeof(htc_radio_smem_via_smd->htc_rom_ver));
+
+	return param_set_copystring(version, kp);
+}
+
+static const struct kernel_param_ops htc_radio_param_ops_ver = {
+	.set = htc_radio_set_ver,
+	.get = param_get_string,
+};
+
+static struct kparam_string htc_radio_param_string_ver = {
+	.maxlen = sizeof(htc_rom_version),
+	.string = htc_rom_version,
+};
+
+module_param_cb(rom_ver, &htc_radio_param_ops_ver, &htc_radio_param_string_ver,
+		0664);
 
 module_init(htc_radio_smem_init);
 module_exit(htc_radio_smem_exit);

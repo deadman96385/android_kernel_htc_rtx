@@ -248,8 +248,6 @@ static struct thermal_zone_device *g_htc_usb_tz_dev = NULL;
 #define BATT_DEBUG(x...) do { \
 	if (g_flag_enable_batt_debug_log) \
 		printk(KERN_INFO"[BATT] " x); \
-	else	\
-		printk(KERN_DEBUG"[BATT] " x); \
 } while (0)
 
 struct dec_level_by_current_ua {
@@ -1220,29 +1218,37 @@ static void calculate_batt_cycle_info(unsigned long time_since_last_update_ms)
 	struct tm timeinfo;
 	const unsigned long timestamp_commit = 1483228800;	// timestamp of 2017/1/1
 	struct timeval rtc_now;
+	bool print_log = false;
 
 	do_gettimeofday(&rtc_now);
 	/* level_raw change times */
-	if ( htc_batt_info.prev.charging_source && ( htc_batt_info.rep.level_raw > htc_batt_info.prev.level_raw ) )
+	if ( htc_batt_info.prev.charging_source && ( htc_batt_info.rep.level_raw > htc_batt_info.prev.level_raw ) ) {
 		g_total_level_raw = g_total_level_raw + ( htc_batt_info.rep.level_raw - htc_batt_info.prev.level_raw );
+		print_log = true;
+	}
 	/* battery overheat time */
-	if ( htc_batt_info.prev.batt_temp >= 550 )
+	if ( htc_batt_info.prev.batt_temp >= 550 ) {
 		g_overheat_55_sec += time_since_last_update_ms/1000;
+		print_log = true;
+	}
 	/* battery first use time */
 	if (((g_batt_first_use_time < timestamp_commit) || (g_batt_first_use_time > rtc_now.tv_sec))
 									&& ( timestamp_commit < rtc_now.tv_sec )) {
 		g_batt_first_use_time = rtc_now.tv_sec;
 		BATT_LOG("%s: g_batt_first_use_time modify!\n", __func__);
+		print_log = true;
 	}
 	/* calculate checksum */
 	g_batt_cycle_checksum = g_batt_first_use_time + g_total_level_raw + g_overheat_55_sec;
 
-	t = g_batt_first_use_time;
-	time_to_tm(t, 0, &timeinfo);
-	BATT_LOG("%s: g_batt_first_use_time = %04ld-%02d-%02d %02d:%02d:%02d, g_overheat_55_sec = %u, g_total_level_raw = %u\n",
-		__func__, timeinfo.tm_year+1900, timeinfo.tm_mon+1, timeinfo.tm_mday,
-		timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec,
-		g_overheat_55_sec, g_total_level_raw);
+	if (print_log == true) {
+		t = g_batt_first_use_time;
+		time_to_tm(t, 0, &timeinfo);
+		BATT_LOG("%s: g_batt_first_use_time = %04ld-%02d-%02d %02d:%02d:%02d, g_overheat_55_sec = %u, g_total_level_raw = %u\n",
+			__func__, timeinfo.tm_year+1900, timeinfo.tm_mon+1, timeinfo.tm_mday,
+			timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec,
+			g_overheat_55_sec, g_total_level_raw);
+	}
 }
 
 static void read_batt_cycle_info(void)
@@ -2214,8 +2220,10 @@ static void htc_battery_age_detect_work(struct work_struct *work)
 			} else {
 				T3_loop++;
 				if (T3_loop >= V_AGE_COUNT_MAX) {
+#if 0 // When boot up from off mode charging, the raised battery voltage cause here misjudge
 					g_is_age_batt_limit_chg = true;
-					BATT_LOG("%s: [T3] it is age battery! Limit charge!", __func__);
+#endif
+					BATT_LOG("%s: [T3] T3 condition trigger! Not limit charge", __func__);
 					goto end;
 				} else {
 					schedule_delayed_work(&htc_batt_info.battery_age_detect_work, msecs_to_jiffies(AGE_CHECK_PERIOD_MS));
@@ -2598,14 +2606,11 @@ static void batt_worker(struct work_struct *work)
 	BATT_EMBEDDED("ID=%d,"
 		"level=%d,"
 		"level_raw=%d,"
-		"level_raw2=%d,"
 		"vol=%dmV,"
 		"temp=%d,"
 		"current(mA)=%d,"
 		"chg_name=%s,"
-		"chg_src=%d,"
 		"chg_en=%d,"
-		"health=%d,"
 		"overload=%d,"
 		"vbus(mV)=%d,"
 		"MAX_IUSB(mA)=%d,"
@@ -2614,10 +2619,10 @@ static void batt_worker(struct work_struct *work)
 		"AICL=%d,"
 		"chg_batt_en=%d,"
 		"status=%d,"
-		"chg_limit_reason=0x%x,"
-		"chg_dis_reason=%d,"
-		"chg_stop_reason=%d,"
-		"consistent=%d,"
+		"chg_limit=0x%x,"
+		"chg_dis=0x%x,"
+		"chg_stop=0x%x,"
+		"consis=%d,"
 		"flag=0x%08X,"
 		"htc_ext=0x%x,"
 		"level_accu=%d,"
@@ -2626,8 +2631,7 @@ static void batt_worker(struct work_struct *work)
 		"learned_FCC=%d,"
 		"batt_res=%d,"
 		"usb_temp=%d,"
-		"usb_overheat=%d,"
-		"usb_overheat_stat=%d"
+		"usb_overheat=%d"
 #if ENABLE_HTC_FB
 		",disp_state=%s"
 #endif
@@ -2635,14 +2639,11 @@ static void batt_worker(struct work_struct *work)
 		htc_batt_info.rep.batt_id,
 		htc_batt_info.rep.level,
 		htc_batt_info.rep.level_raw,
-		get_property(htc_batt_info.bms_psy, POWER_SUPPLY_PROP_CHARGE_COUNTER_SHADOW),
 		htc_batt_info.rep.batt_vol,
 		htc_batt_info.rep.batt_temp,
 		(htc_batt_info.rep.batt_current/1000),
 		cg_chr_src[htc_batt_info.rep.charging_source],
-		htc_batt_info.rep.chg_src,
 		htc_batt_info.rep.chg_en,
-		htc_batt_info.rep.health,
 		htc_batt_info.rep.overload,
 		(htc_batt_info.vbus/1000),
 		max_iusb,
@@ -2663,8 +2664,7 @@ static void batt_worker(struct work_struct *work)
 		get_property(htc_batt_info.bms_psy, POWER_SUPPLY_PROP_CHARGE_FULL),
 		get_property(htc_batt_info.bms_psy, POWER_SUPPLY_PROP_RESISTANCE),
 		usb_conn_temp,
-		g_usb_overheat? 1 : 0,
-		g_htc_usb_overheat_check_state
+		g_usb_overheat? 1 : 0
 #if ENABLE_HTC_FB
 		,htc_batt_info.state? "OFF" : "ON"
 #endif
@@ -3479,7 +3479,8 @@ static ssize_t htc_battery_show_batt_attr(struct device *dev,
 			"batt_cycle_overheat(s): %u;\n"
 			"htc_extension: 0x%x;\n"
 			"usb_overheat_state: %d;\n"
-			"USB_PWR_TEMP(degree): %d;\n",
+			"USB_PWR_TEMP(degree): %d;\n"
+			"is_battery_age: %d;\n",
 			cg_chr_src[htc_batt_info.rep.charging_source],
 			htc_batt_info.rep.chg_en,
 			htc_batt_info.rep.overload,
@@ -3491,7 +3492,8 @@ static ssize_t htc_battery_show_batt_attr(struct device *dev,
 			g_overheat_55_sec,
 			htc_batt_info.htc_extension,
 			g_htc_usb_overheat_check_state,
-			usb_conn_temp
+			usb_conn_temp,
+			g_is_age_batt_limit_chg
 			);
 
 	soc       = get_property(htc_batt_info.batt_psy, POWER_SUPPLY_PROP_CAPACITY);

@@ -680,12 +680,11 @@ static void htc_show_sensor_temp(void)
 	int i;
 	int ret = 0;
 	int temp = 0;
-	char *sensors[] = {"pm8150b-wp-therm", "wp-therm", "xo-therm",
-			"skin-therm", "camera-flash-therm", "skin-msm-therm",
-			"pa-therm1", "pa-therm2", "conn-therm",
-			"battery", "bms", "11ad-therm",
-			"wigig-bb-therm", "wigig-rf-therm", "modem1-pa0-usr",
-			"modem1-pa1-usr", "modem1-pa2-usr"};
+	char *sensors[] = {"pm8150b-wp-therm",   "wp-therm",       "skin-therm",
+			   "camera-flash-therm", "skin-msm-therm", "pa-therm1",
+			   "pa-therm2",		 "conn-therm",     "pm8150b_fg",
+			   "11ad-therm",	 "wigig-bb-therm", "wigig-rf-therm",
+			   "modem1-pa0-usr",     "modem1-pa2-usr", "modem1-modem-usr"};
 	struct thermal_zone_device *tzd = NULL;
 	char piece[32];
 	char output[512];

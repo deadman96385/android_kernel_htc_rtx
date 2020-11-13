@@ -327,6 +327,13 @@ int mhi_arch_pcie_init(struct mhi_controller *mhi_cntrl)
 		/* save reference state for pcie config space */
 		arch_info->ref_pcie_state = pci_store_saved_state(
 							mhi_dev->pci_dev);
+		/*
+		 * PCIe framework attempts to restore config space when link is
+		 * off. Bypass framework attempts which may cause unncessary
+		 * delays and instead have MHI controller restore config space
+		 * after PCIe link is accessible.
+		 */
+		mhi_dev->pci_dev->no_d3hot = true;
 
 		mhi_driver_register(&mhi_bl_driver);
 	}

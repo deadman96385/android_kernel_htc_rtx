@@ -4665,6 +4665,18 @@ static ssize_t typec_enable_store(struct device *dev,
 }
 static DEVICE_ATTR_RW(typec_enable);
 
+static ssize_t get_pd_active_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct usbpd *pd = dev_get_drvdata(dev);
+	union power_supply_propval pval;
+
+	power_supply_get_property(pd->usb_psy, POWER_SUPPLY_PROP_PD_ACTIVE, &pval);
+
+	return snprintf(buf, PAGE_SIZE, "%d\n", pval.intval);
+}
+static DEVICE_ATTR_RO(get_pd_active);
+
 static struct attribute *usbpd_attrs[] = {
 	&dev_attr_contract.attr,
 	&dev_attr_initial_pr.attr,
@@ -4691,6 +4703,7 @@ static struct attribute *usbpd_attrs[] = {
 	&dev_attr_get_battery_status.attr,
 	&dev_attr_vconn_en.attr,
 	&dev_attr_typec_enable.attr,
+	&dev_attr_get_pd_active.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(usbpd);

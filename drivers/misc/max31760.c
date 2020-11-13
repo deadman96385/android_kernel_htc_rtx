@@ -72,11 +72,13 @@ static uint8_t modem_status = 0;
 static uint8_t sound_trigger = 0;
 static uint8_t noise_limit = 128;
 static uint8_t current_pwm = 0;
+static bool pwr_status = 0;
+static bool probe_success = 0;
 static void set_noise_limit(struct work_struct *work);
 static DECLARE_DELAYED_WORK(work, set_noise_limit);
 
 struct max31760_i2c_platform_data {
-    int pwr_ena;
+	int pwr_ena;
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *gpio_state_active;
 	struct pinctrl_state *gpio_state_sleep;
@@ -286,13 +288,13 @@ static int read_pwm(void)
 	int ret;
 	uint8_t pwm_data = 0;
 
-	if(!client) {
-		dev_err(&client->dev, "[FAN] %s cannot identify max31760\n", __func__);
-		return -1;
+	if (!probe_success) {
+		pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
+		return -EPERM;
 	}
-	if(!pdata->pwr_ena){
+	if (!pdata->pwr_ena) {
 		dev_err(&client->dev, "[FAN] %s power was turned off\n", __func__);
-		return -1;
+		return -EPERM;
 	}
 	ret = i2c_read_block(client, PWMV_REGISTER, &pwm_data, 1);
 
@@ -310,14 +312,15 @@ static long read_rpm(void)
 
 	//TACH is measured only when PWM is on, thus ONLY when fan speed is 0, use the value from read_pwm instead
 	if (read_pwm() != 0) {
-		if (!client) {
-			dev_err(&client->dev, "[FAN] %s cannot identify max31760\n", __func__);
-			return -1;
+		if (!probe_success) {
+			pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
+			return -EPERM;
 		}
 		if (!pdata->pwr_ena) {
 			dev_err(&client->dev, "[FAN] %s power was turned off\n", __func__);
-			return -1;
+			return -EPERM;
 		}
+
 		ret = i2c_read_block(client, TC1H_REGISTER, &msb, 1);
 		if (ret)
 			return ret;
@@ -337,6 +340,10 @@ static void set_noise_limit(struct work_struct *dummy)
 {
 	struct i2c_client *client = private_max31760_client;
 
+	if (!probe_success) {
+		pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
+		return;
+	}
 	dev_info(&client->dev, "[FAN] %s: Set PWM = %d\n",__func__, noise_limit);
 	i2c_write_block(client, PWMR_REGISTER, &noise_limit, 1);
 }
@@ -349,11 +356,13 @@ static ssize_t get_control_mode(struct device *dev, struct device_attribute *att
 	uint8_t data = 0;
 
 	struct max31760_i2c_platform_data *pdata = private_max31760_pdata;
-	if(!pdata->pwr_ena)
+	if (!probe_success) {
+		pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
+		return scnprintf(buf, PAGE_SIZE, "[FAN] max31760 probe failed, skipping\n");
+	}
+	if (!pdata->pwr_ena)
 		return scnprintf(buf, PAGE_SIZE, "Max31760 is powered OFF\n");
 
-	if(!client)
-		return -EINVAL;
 	ret = i2c_read_block(client, CR2_REGISTER, &current_data, 1);
 	data  = current_data%2; //DFC: Bit 0
 
@@ -378,6 +387,10 @@ static ssize_t set_control_mode(struct device *dev,
 		return ret;
 	}
 
+	if (!probe_success) {
+		pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
+		return -EPERM;
+	}
 	ret = i2c_read_block(client, CR2_REGISTER, &current_data, 1);
 
 	if (bl_data){
@@ -411,6 +424,10 @@ static ssize_t set_pwm_control(struct device *dev,
 	int ret;
 	uint8_t data = 0;
 
+	if (!probe_success) {
+		pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
+		return -EPERM;
+	}
 	mutex_lock(&pdata->lock);
 	ret = kstrtou8(buf, 16, &data);
 	if (ret) {
@@ -450,7 +467,11 @@ static ssize_t get_fan_rpm(struct device *dev, struct device_attribute *attr, ch
 {
 	long rpm;
 	struct max31760_i2c_platform_data *pdata = private_max31760_pdata;
-	if(!pdata->pwr_ena)
+	if (!probe_success) {
+		pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
+		return scnprintf(buf, PAGE_SIZE, "[FAN] max31760 probe failed, skipping\n");
+	}
+	if (!pdata->pwr_ena)
 		return scnprintf(buf, PAGE_SIZE, "Max31760 is powered OFF\n");
 	rpm = read_rpm();
 	return scnprintf(buf, PAGE_SIZE, "%ld\n", rpm);
@@ -465,10 +486,13 @@ static ssize_t get_internal_temp(struct device *dev, struct device_attribute *at
 	u16 word;
 	int32_t val;
 
-	if(!client)
-		return -EINVAL;
-	if(!pdata->pwr_ena)
+	if (!probe_success) {
+		pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
+		return scnprintf(buf, PAGE_SIZE, "[FAN] max31760 probe failed, skipping\n");
+	}
+	if (!pdata->pwr_ena)
 		return scnprintf(buf, PAGE_SIZE, "Max31760 is powered OFF\n");
+
 	ret = i2c_read_block(client, LTH_REGISTER, &msb, 1);
 	ret = i2c_read_block(client, LTL_REGISTER, &lsb, 1);
 
@@ -487,9 +511,11 @@ static ssize_t get_remote_temp(struct device *dev, struct device_attribute *attr
 	u16 word;
 	int32_t val;
 
-	if(!client)
-		return -EINVAL;
-	if(!pdata->pwr_ena)
+	if (!probe_success) {
+		pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
+		return scnprintf(buf, PAGE_SIZE, "[FAN] max31760 probe failed, skipping\n");
+	}
+	if (!pdata->pwr_ena)
 		return scnprintf(buf, PAGE_SIZE, "Max31760 is powered OFF\n");
 
 	ret = i2c_read_block(client, RTH_REGISTER, &msb, 1);
@@ -515,6 +541,10 @@ static ssize_t set_power_control( struct device *dev ,struct device_attribute *a
 	struct i2c_client *client = private_max31760_client;
 	struct max31760_i2c_platform_data *pdata = private_max31760_pdata;
 
+	if (!probe_success) {
+		pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
+		return -EPERM;
+	}
 	mutex_lock(&pdata->lock);
 	ret = kstrtobool(buf, &bl_data);
 	if (ret) {
@@ -531,6 +561,7 @@ static ssize_t set_power_control( struct device *dev ,struct device_attribute *a
 			mutex_unlock(&pdata->lock);
 			return ret;
 		}
+		pwr_status = power_enable;
 
 		dev_info(dev, "[FAN] max31760 restart, load blocks from EEPROM\n",__func__);
 		data = 0x9F;    // Load blocks from EEPROM
@@ -549,6 +580,7 @@ static ssize_t set_power_control( struct device *dev ,struct device_attribute *a
 			mutex_unlock(&pdata->lock);
 			return ret;
 		}
+		pwr_status = power_disable;
 		current_pwm = 0;
 	}
 	mutex_unlock(&pdata->lock);
@@ -597,6 +629,10 @@ static ssize_t set_sound_trigger(struct device *dev, struct device_attribute *at
 	uint8_t data = 0x00;
 	uint16_t decelerate_time = 1 * HZ;
 
+	if (!probe_success) {
+		pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
+		return -EPERM;
+	}
 	mutex_lock(&pdata->lock);
 	ret = kstrtobool(buf, &bl_data);
 	if (ret) {
@@ -605,16 +641,10 @@ static ssize_t set_sound_trigger(struct device *dev, struct device_attribute *at
 		return ret;
 	}
 
-	if (!client) {
-		dev_err(&client->dev, "[FAN] %s cannot identify max31760\n", __func__);
-		mutex_unlock(&pdata->lock);
-		return -EINVAL;
-	}
-
 	if (!pdata->pwr_ena) {
 		dev_err(&client->dev, "[FAN] %s: Max31760 is powered OFF\n", __func__);
 		mutex_unlock(&pdata->lock);
-		return -EINVAL;
+		return -EPERM;
 	}
 
 	if (bl_data) {
@@ -667,17 +697,17 @@ void htc_fan_stats(void)
 	u32 rpm = 0;
 	int32_t internal_temp, external_temp;
 
-	if (!client) {
-		pr_err("[K] can't identify max31760\n");
+	if (!probe_success) {
+		pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
 		return;
 	}
-
 	// Check fan pinctrl state
 	if (!pdata->pwr_ena) {
 		dev_info(&client->dev, "[K] fan: max31760 is powered OFF\n");
 		return;
 	}
 
+	mutex_lock(&pdata->lock);
 	// RPM
 	if (read_pwm() != 0) {
 		ret = i2c_read_block(client, TC1H_REGISTER, &msb, 1);
@@ -710,8 +740,10 @@ void htc_fan_stats(void)
 		external_temp = 0x7FFFFFFF;
 	}
 
-	dev_info(&client->dev, "[K] fan: (RPM,%d), (Int_temp,%d), (Ext_temp,%d)\n",
-		   rpm, internal_temp, external_temp);
+	dev_info(&client->dev, "[K] fan: (RPM,%d), (Int_temp,%d), (Ext_temp,%d), "
+			"(pwr_stat,%d), (curr_pwm,%d), (mdm_stat,%d), (snd_trig,%d)\n",
+		rpm, internal_temp, external_temp, pwr_status, current_pwm, modem_status, sound_trigger);
+	mutex_unlock(&pdata->lock);
 }
 #endif
 
@@ -736,29 +768,51 @@ static int max31760_set_attr_files(struct device *dev)
 	if (IS_ERR(htc_fan_class)) {
 		ret = PTR_ERR(htc_fan_class);
 		pr_err("%s: could not allocate htc_fan_class, ret = %d\n", __func__, ret);
+		goto err;
 	}
 
 	dev = device_create(htc_fan_class, NULL, 0, "%s", "max31760");
 	if (IS_ERR(dev)) {
 		ret = PTR_ERR(dev);
 		pr_err("%s: could not allocate htc_fan_dev, ret = %d\n", __func__, ret);
+		goto err_class;
 	}
 
 	for (i = 0; i < ARRAY_SIZE(htc_fan_attributes); i++) {
 		ret = device_create_file(dev, htc_fan_attributes + i);
 		if (ret) {
 			pr_err("%s: could not allocate htc_fan_attributes, i=%d, ret=%d\n", __func__, i, ret);
+			goto err_device;
 		}
 	}
-
 	return ret;
+
+err_device:
+	for (i--; i >= 0; i--) {
+		device_remove_file(dev, htc_fan_attributes + i);
+	}
+	device_destroy(htc_fan_class, 0);
+err_class:
+	class_destroy(htc_fan_class);
+err:
+	return ret;
+}
+
+static void max31760_rmv_attr_files(struct device *dev)
+{
+	int i;
+	for (i = 0; i < ARRAY_SIZE(htc_fan_attributes); i++) {
+		device_remove_file(dev, htc_fan_attributes + i);
+	}
+	device_destroy(htc_fan_class, 0);
+	class_destroy(htc_fan_class);
 }
 
 static int max31760_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	struct device *dev = &client->dev;
 	struct max31760_i2c_platform_data *pdata;
-	int ret = 0;
+	int err, ret = 0;
 	uint8_t data = 0x00;
 
 	dev_info(dev, "[FAN][PROBE] FAN driver probe +++\n");
@@ -769,34 +823,36 @@ static int max31760_probe(struct i2c_client *client, const struct i2c_device_id 
 		goto err_exit;
 	}
 	mutex_init(&pdata->lock);
+	pdata->pwr_ena = power_disable;
+	private_max31760_pdata = pdata;
+	private_max31760_client = client;
 
 	dev_dbg(dev, "[FAN][PROBE] max31760_pinctrl_init\n");
 	ret = max31760_pinctrl_init(client, pdata);
 	if (ret) {
 		dev_err(dev, "[FAN][PROBE] failed of max31760_pinctrl_init: %d\n", ret);
-		return ret;
+		goto err_pinctrl_init;
 	}
 
-	ret = pinctrl_select_state(pdata->pinctrl , pdata->gpio_state_active);
-	if(ret){
+	ret = pinctrl_select_state(pdata->pinctrl, pdata->gpio_state_active);
+	if (ret) {
 		dev_err(dev, "[FAN][PROBE] %s: Cannot select pinctrl state gpio active\n", __func__);
-		return ret;
+		goto err_pwr_enable;
 	}
-
 	pdata->pwr_ena = power_enable;
 
 	dev_dbg(dev, "[FAN][PROBE] max31760_registers_update\n");
 	ret = max31760_registers_update(client);
 	if (ret) {
 		dev_err(dev, "[FAN][PROBE] failed of max31760_registers_update: %d\n", ret);
-		return ret;
+		goto err_reg_fail;
 	}
 
 	dev_dbg(dev, "[FAN][PROBE] max31760_write_lut\n");
 	ret = max31760_write_lut(client);
 	if (ret) {
 		dev_err(dev, "[FAN][PROBE] failed of max31760_write_lut: %d\n", ret);
-		return ret;
+		goto err_lut_fail;
 	}
 
 	dev_dbg(dev, "[FAN][PROBE] max31760 write blocks to EEPROM\n");
@@ -804,35 +860,45 @@ static int max31760_probe(struct i2c_client *client, const struct i2c_device_id 
 	ret = i2c_write_block(client, EEX_REGISTER, &data, 1);
 	if (ret) {
 		dev_err(dev, "[FAN][PROBE] failed to write EEPROM: %d\n", ret);
-		return ret;
+		goto err_eex_fail;
 	}
 
 	mdelay(550);
-
-	private_max31760_pdata = pdata;
-	private_max31760_client = client;
 
 	dev_dbg(dev, "[FAN][PROBE] max31760 set_attr_file\n");
 	ret = max31760_set_attr_files(dev);
 	if (ret) {
 		dev_err(dev, "[FAN][PROBE] failed of max31760_set_attr_files: %d\n", ret);
-		return ret;
+		goto err_attr_fail;
 	}
 
-	ret = pinctrl_select_state(pdata->pinctrl , pdata->gpio_state_sleep);
-	if(ret){
+	ret = pinctrl_select_state(pdata->pinctrl, pdata->gpio_state_sleep);
+	if (ret) {
 		dev_err(dev, "[FAN][PROBE] %s: Cannot select pinctrl state gpio sleep\n", __func__);
-		return ret;
+		goto err_pwr_disable;
 	}
-
 	pdata->pwr_ena = power_disable;
 
+	probe_success = 1;
 	dev_info(dev, "[FAN][PROBE] FAN driver probe ---\n");
 	return ret;
 
-	err_exit:
-		dev_err(dev, "[FAN][PROBE] FAN driver probe error exit\n");
-		return ret;
+err_pwr_disable:
+	max31760_rmv_attr_files(dev);
+err_attr_fail:
+err_eex_fail:
+err_lut_fail:
+err_reg_fail:
+	err = pinctrl_select_state(pdata->pinctrl, pdata->gpio_state_sleep);
+	if (err) {
+		dev_err(dev, "[FAN][PROBE] %s: Cannot select pinctrl state gpio sleep\n", __func__);
+	}
+err_pwr_enable:
+err_pinctrl_init:
+	kfree(pdata);
+err_exit:
+	dev_err(dev, "[FAN][PROBE] FAN driver probe error exit\n");
+	return ret;
 }
 
 /* Toggle the fan GPIOs and regulators to match enable state. */
@@ -842,6 +908,10 @@ static int max31760_update_fan_states(bool enable)
 	struct i2c_client *client = private_max31760_client;
 	int ret = 0;
 
+	if (!probe_success) {
+		pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
+		return -EPERM;
+	}
 	dev_dbg(&client->dev, "[FAN] %s set_state:%d",__func__,enable);
 
 	if ( enable ){
@@ -922,33 +992,47 @@ static int max31760_resume(struct device *dev)
 	uint8_t current_data = 0;
 	uint8_t data = 0;
 
+	if (!probe_success) {
+		pr_err("[FAN] max31760 probe failed, skipping %s\n", __func__);
+		return -EPERM;
+	}
 	htc_fan_stats();
 
-	dev_info(dev, "[FAN] %s - power on\n", __func__);
-	ret = max31760_update_fan_states(power_enable);
-	if (ret) {
-		dev_err(dev, "[FAN] %s: cannot update fan states ",__func__);
-		return ret;
-	}
+	if (pwr_status) {
+		dev_info(dev, "[FAN] %s - fan power on, set PWM = %d\n", __func__, current_pwm);
+		ret = max31760_update_fan_states(power_enable);
+		if (ret) {
+			dev_err(dev, "[FAN] %s: cannot update fan states ",__func__);
+			return ret;
+		}
 
-	ret = i2c_read_block(client, CR2_REGISTER, &current_data, 1);
-	if (ret) {
-		dev_err(dev, "[FAN] %s: Fail to read CR2_REGISTER: %d", __func__, ret);
-		return ret;
-	}
+		ret = i2c_read_block(client, CR2_REGISTER, &current_data, 1);
+		if (ret) {
+			dev_err(dev, "[FAN] %s: Fail to read CR2_REGISTER: %d", __func__, ret);
+			return ret;
+		}
 
-	data = current_data | DFC_BIT;
-	ret = i2c_write_block(client, CR2_REGISTER, &data, 1);
-	if (ret) {
-		dev_err(dev, "[FAN] %s: Fail to write CR2_REGISTER: %d", __func__, ret);
-		return ret;
-	}
+		data = current_data | DFC_BIT;
+		ret = i2c_write_block(client, CR2_REGISTER, &data, 1);
+		if (ret) {
+			dev_err(dev, "[FAN] %s: Fail to write CR2_REGISTER: %d", __func__, ret);
+			return ret;
+		}
 
-	dev_info(dev, "[FAN] %s - Set PWM = %d\n", __func__, current_pwm);
-	ret = i2c_write_block(client, PWMR_REGISTER, &current_pwm, 1);
-	if (ret) {
-		dev_err(dev, "[FAN] %s: Set PWM failed: %d",__func__, ret);
-		return ret;
+		ret = i2c_write_block(client, PWMR_REGISTER, &current_pwm, 1);
+		if (ret) {
+			dev_err(dev, "[FAN] %s: Set PWM failed: %d",__func__, ret);
+			return ret;
+		}
+
+	}
+	else {
+		dev_info(dev, "[FAN] %s - fan power off\n", __func__);
+		ret = max31760_update_fan_states(power_disable);
+		if (ret) {
+			dev_err(dev, "[FAN] %s: Cannot update fan states ", __func__);
+			return ret;
+		}
 	}
 	return 0;
 }

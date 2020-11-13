@@ -672,6 +672,9 @@ static int smb5_usb_get_prop(struct power_supply *psy,
 	struct smb_charger *chg = &chip->chg;
 	union power_supply_propval pval;
 	int rc = 0;
+#ifdef CONFIG_HTC_BATT
+	u8 reg = 0;
+#endif //CONFIG_HTC_BATT
 	val->intval = 0;
 
 	switch (psp) {
@@ -680,9 +683,13 @@ static int smb5_usb_get_prop(struct power_supply *psy,
 		break;
 #ifdef CONFIG_HTC_BATT
 	case POWER_SUPPLY_PROP_HEALTH:
-		val->intval = POWER_SUPPLY_HEALTH_GOOD;
+		rc = smblib_read(chg, USBIN_BASE + INT_RT_STS_OFFSET, &reg);
+		if (reg & USBIN_OV_RT_STS_BIT)
+			val->intval = POWER_SUPPLY_HEALTH_OVERVOLTAGE;
+		else
+			val->intval = POWER_SUPPLY_HEALTH_GOOD;
 		break;
-#endif
+#endif //CONFIG_HTC_BATT
 	case POWER_SUPPLY_PROP_ONLINE:
 #ifdef CONFIG_HTC_BATT
 		rc = smblib_get_prop_usb_present(chg, val);

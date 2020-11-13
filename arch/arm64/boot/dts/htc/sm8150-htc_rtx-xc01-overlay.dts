@@ -38,6 +38,6 @@
 / {
 	model = "overlay HTC RTX XC01";
 	compatible = "qcom,sm8150-mtp", "qcom,sm8150", "qcom,mtp";
-	qcom,msm-id = <485 0x20001>, <486 0x20001>, <487 0x20001>, <492 0x20001>;
+	qcom,msm-id = <485 0x20001>, <486 0x20001>, <487 0x20001>, <492 0x20001>, <493 0x20001>;
 	qcom,board-id = <0x2 0x0>;
 };
